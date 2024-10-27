@@ -1,0 +1,44 @@
+-include $(input_spec)
+
+src ?= $(CURDIR)
+out ?= $(O)
+bin ?= a.out
+obj-y := $(addprefix $(out)/,$(obj-y))
+ccflags-y += -I $(src) $(CCFLAGS)
+
+all: $(bin)
+
+# Manage dependencies
+-include $(out)/.depend
+$(out)/.depend: $(wildcard $(out)/*.h $(out)/*.c)
+	@$(CC) $(ccflags-y) -MM $(out)/*.c > $@ 2>/dev/null || :
+
+# Build Rules
+$(bin): $(obj-y)
+	@echo '  CC      $@'
+	@$(CC) $(ccflags-y) $(obj-y) -o $(out)/$@ $(ldflags-y)
+$(out)/%.o: %.c
+	@echo '  CC      $<'
+	@$(CC) $(ccflags-y) -c $(addprefix $(src)/,$<) -o $@
+$(out)/%.o: %.cpp
+	@echo '  CXX     $<'
+	@$(CXX) $(ccflags-y) -c $(addprefix $(src)/,$<) -o $@
+$(out)/%.lex.c: %.l $(out)/%.tab.h
+	@echo '  LEX     $<'
+	@$(LEX) -o $(basename $@).c $(addprefix $(src)/,$<)
+$(out)/%.tab.c $(out)/%.tab.h: %.y
+	@echo '  BISON   $<'
+	@$(BISON) --report='none' --defines=$(basename $@).h \
+		-o $(basename $@).c $(addprefix $(src)/,$<)
+$(out)/%.tab.o: $(out)/%.tab.c $(out)/%.tab.h
+	@echo '  CC      $(shell basename $<)'
+	@$(CC) -I $(out) $(ccflags-y) -c $< -o $@
+$(out)/%.lex.o: $(out)/%.lex.c $(out)/%.tab.h
+	@echo '  CC      $(shell basename $<)'
+	@$(CC) -I $(out) $(ccflags-y) -c $< -o $@
+
+# Clean rules
+clean:
+	@rm -f $(out)/$(bin) $(obj-y) $(out)/*.tab.* $(out)/.depend
+
+.PHONY: clean
