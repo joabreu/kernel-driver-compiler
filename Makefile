@@ -26,6 +26,8 @@ $(TARGETS): $(O)
 		input_spec=$@ \
 		out=$(O)/$(shell basename $(shell dirname $@)) \
 		all
+.PHONY: $(TARGETS)
+
 # Clean all targets
 $(CLEAN_TARGETS): $(O)
 	@mkdir -p $(O)/$(shell basename $(shell dirname $(subst clean-,,$@)))
