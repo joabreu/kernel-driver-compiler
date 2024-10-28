@@ -17,11 +17,11 @@
 	(__a < __b) ? __a : __b;	\
 })
 #define NUM_REGIONS		4
+#define REGION_SIZE		0x1000
 
 struct kdc_user_ctx {
-	__u32 base[NUM_REGIONS];
+	__u32 *base[NUM_REGIONS];
 	struct kdc_args kdc_args;
-	int base_cnt;
 	__u32 *data;
 	FILE *dest;
 	long data_size32;
@@ -29,109 +29,41 @@ struct kdc_user_ctx {
 	void *ptr;
 };
 
-static __u32 kdcu_get_vaddr(struct kdc_user_ctx *ctx, __u32 addr)
-{
-	unsigned int p_need, p_size;
-	off_t m_address, offset;
-	void *v_address;
-	int size = 4;
-	__u32 temp;
-	char *map;
-
-	p_size = sysconf(_SC_PAGE_SIZE);
-
-	/* mapped address, for mmap() must be page aligned */
-	m_address = addr & ~(off_t)(p_size - 1);
-	/* offset in one page */
-	offset = addr & (p_size - 1);
-	/* pages needed */
-	p_need = (offset + size) & ~(p_size - 1);
-
-	/* size needed = number of complete pages + 1 */
-	if (((offset + size) & (p_size - 1)) != 0)
-		p_need += p_size;
-
-	/*
-	 ************* NOTES
-	 * PROT_EXEC  Pages may be executed.
-	 * PROT_READ  Pages may be read.
-	 * PROT_WRITE Pages may be written.
-	 * PROT_NONE  Pages may not be accessed.
-	 *
-	 * MAP_SHARED  Changes are shared.
-	 * MAP_PRIVATE Changes are private.
-	 * MAP_FIXED Interpret addr exactly.
-	 */
-	map = mmap(NULL, p_need, PROT_READ | PROT_WRITE, MAP_SHARED,
-		   ctx->fd, m_address);
-	if (map == MAP_FAILED) {
-		perror("mmap failed");
-		exit(1);
-	}
-
-	msync(map, p_need, MS_SYNC);
-
-	v_address = (char *)map + (unsigned int)offset;
-	temp = (__u32)(*(off_t *)(v_address) & 0xffffffff);
-
-	munmap(map, p_need);
-
-	return temp;
-}
-
-static void kdcu_set_vaddr(struct kdc_user_ctx *ctx, __u32 addr, __u32 val)
-{
-	unsigned int p_need, p_size;
-	off_t m_address, offset;
-	void *v_address;
-	int size = 4;
-	char *map;
-
-	p_size = sysconf(_SC_PAGE_SIZE);
-	m_address = addr & ~(off_t)(p_size - 1);
-	offset    = addr & (p_size - 1);
-	p_need    = (offset + size) & ~(p_size - 1);
-
-	if (((offset + size) & (p_size - 1)) != 0)
-		p_need += p_size;
-
-	map = mmap(NULL, p_need, PROT_READ | PROT_WRITE, MAP_SHARED,
-		   ctx->fd, m_address);
-	if (map == MAP_FAILED) {
-		perror("mmap failed");
-		exit(1);
-	}
-
-	v_address = (char *)map + (unsigned int)offset;
-	*(int *)(v_address) = val;
-
-	msync(map, p_need, MS_SYNC);
-	munmap(map, p_need);
-}
-
 static int __kdcu_read(void *ptr, int bar, __u32 addr, __u32 *val)
 {
 	struct kdc_user_ctx *ctx = (struct kdc_user_ctx *)ptr;
+	__u32 *base_ptr;
 
 	if (!ctx->base[bar]) {
 		fprintf(stderr, "BAR '%d' is not available\n", bar);
 		return -ENODEV;
 	}
+	if ((addr / 4) >= REGION_SIZE) {
+		fprintf(stderr, "address '0x%x' is not available\n", addr);
+		return -EINVAL;
+	}
 
-	*val = kdcu_get_vaddr(ctx, (off_t)(ctx->base[bar] + addr));
+	base_ptr = ctx->base[bar];
+	*val = base_ptr[addr];
 	return 0;
 }
 
 static int __kdcu_write(void *ptr, int bar, __u32 addr, __u32 val)
 {
 	struct kdc_user_ctx *ctx = (struct kdc_user_ctx *)ptr;
+	__u32 *base_ptr;
 
 	if (!ctx->base[bar]) {
 		fprintf(stderr, "BAR '%d' is not available\n", bar);
 		return -ENODEV;
 	}
+	if ((addr / 4) >= REGION_SIZE) {
+		fprintf(stderr, "address '0x%x' is not available\n", addr);
+		return -EINVAL;
+	}
 
-	kdcu_set_vaddr(ctx, (off_t)(ctx->base[bar] + addr), val);
+	base_ptr = ctx->base[bar];
+	base_ptr[addr] = val;
 	return 0;
 }
 
@@ -331,9 +263,8 @@ int main(int argc, char **argv)
 	const char *ext;
 	int base = 0;
 
-	if (argc < 4) {
+	if (argc < 3) {
 		printf("usage: %s [--verbose] <fw.hex> <fw-section>\n", argv[0]);
-		printf("       <base-addr-bar0> [... <base-addr-barX>]\n");
 		exit(1);
 	}
 
@@ -349,33 +280,20 @@ int main(int argc, char **argv)
 		goto out;
 	}
 
-	ctx->fd = open("/dev/mem", O_RDWR | O_SYNC);
-	if (ctx->fd < 0) {
-		perror("failed to open /dev/mem");
-		ret = -EIO;
-		goto out_ctx;
-	}
-
-	for (i = 3 + base; i < MIN(argc, 3 + base + NUM_REGIONS); i++) {
-		ctx->base[i - (3 + base)] = strtoul(argv[i], NULL, 0);
-		if (!ctx->base[i - (3 + base)]) {
-			fprintf(stderr, "failed to parse base address %d ('%s')\n",
-				i - (3 + base), argv[i]);
+	for (i = 0; i < NUM_REGIONS; i++) {
+		ctx->base[i] = calloc(1, REGION_SIZE);
+		if (!ctx->base[i]) {
+			fprintf(stderr, "failed to alloc region %d\n", i);
 			ret = -EINVAL;
-			goto out_fd;
+			goto out_regions;
 		}
-
-		fprintf(stderr, "base address [%d]: 0x%08x\n",
-			i - (3 + base), ctx->base[i - (3 + base)]);
-
-		ctx->base_cnt++;
 	}
 
 	ctx->dest = fopen(argv[1 + base], "rb");
 	if (!ctx->dest) {
 		perror("failed to open firmware file");
 		ret = -EIO;
-		goto out_fd;
+		goto out_regions;
 	}
 
 	ext = strrchr(argv[1 + base], '.');
@@ -410,8 +328,8 @@ int main(int argc, char **argv)
 	ctx->kdc_args.flags = debug ? KDC_PARSER_VERBOSE : 0;
 	ctx->kdc_args.section_id = section_id;
 	ctx->kdc_args.arguments[0] = (__u32)section_id;
-	ctx->kdc_args.arguments[1] = (__u32)ctx->base_cnt;
-	for (i = 0; i < ctx->base_cnt; i++)
+	ctx->kdc_args.arguments[1] = (__u32)NUM_REGIONS;
+	for (i = 0; i < NUM_REGIONS; i++)
 		ctx->kdc_args.arguments[i + 2] = (__u32)ctx->base[i];
 
 	ret = kdc_common_process(ctx->ptr, &ctx->kdc_args);
@@ -420,8 +338,10 @@ out_data:
 	free(ctx->data);
 out_dest:
 	fclose(ctx->dest);
-out_fd:
-	close(ctx->fd);
+out_regions:
+	for (i = 0; i < NUM_REGIONS; i++)
+		if (ctx->base[i])
+			free(ctx->base[i]);
 out_ctx:
 	free(ctx);
 out:
