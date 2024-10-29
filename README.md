@@ -8,9 +8,9 @@ Use this one-liner for initial demo.
 
 ```shell
 make && \
-./build/compiler/compiler samples/test.c build/test.xz && \
-./build/user/runner-user build/test.xz 1 && \
-./build/user/runner-user build/test.xz 2
+    ./build/compiler/compiler samples/test.c build/test.xz && \
+    ./build/user/runner-user build/test.xz 1 && \
+    ./build/user/runner-user build/test.xz 2
 ```
 
 ## Disclaimer
