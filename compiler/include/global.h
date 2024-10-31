@@ -2,8 +2,17 @@
 #define __GLOBAL_H__
 
 #include <stdio.h>
+#include <stdint.h>
 #include "kdc_api.h"
 #include "stack.h"
+
+#ifndef htole32
+#if __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__
+#define htole32(x) (x)
+#else
+#define htole32(x) __builtin_bswap32(x)
+#endif
+#endif
 
 #define KDC_VAL(x)		(htole32(x))
 #define ARRAY_SIZE(x)		(sizeof(x) / sizeof(*(x)))
