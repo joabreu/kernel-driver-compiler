@@ -1,7 +1,8 @@
 TARGETS = $(wildcard $(CURDIR)/*/*.mk)
 CLEAN_TARGETS = $(addprefix clean-,$(TARGETS))
 HELPER = $(CURDIR)/Makefile.helper
-CCFLAGS = -I $(CURDIR)/common
+INCLUDE_DIRS = $(CURDIR)/common /opt/homebrew/include
+CCFLAGS += $(foreach dir,$(INCLUDE_DIRS),$(if $(wildcard $(dir)), -I$(dir)))
 O = $(CURDIR)/build
 
 export GCC=gcc
