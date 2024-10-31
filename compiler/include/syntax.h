@@ -3,6 +3,7 @@
 
 #define MAX_ARRAY_SIZE	0x18
 
+#include <time.h>
 #include "global.h"
 #include "stack.h"
 
