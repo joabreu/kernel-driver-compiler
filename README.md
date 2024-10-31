@@ -2,6 +2,10 @@
 
 An extra abstraction layer for Kernel Drivers. Define your own write/read logic.
 
+## Requirements
+
+* `libxz`: For compressing the resulting binary.
+
 ## Get Started
 
 Use this one-liner for initial demo.
