@@ -3,7 +3,7 @@ CLEAN_TARGETS = $(addprefix clean-,$(TARGETS))
 HELPER = $(CURDIR)/Makefile.helper
 INCLUDE_DIRS = $(CURDIR)/common /opt/homebrew/include
 CCFLAGS += $(foreach dir,$(INCLUDE_DIRS),$(if $(wildcard $(dir)), -I$(dir)))
-O = $(CURDIR)/build
+O ?= $(CURDIR)/build
 
 export GCC=gcc
 export BISON=bison
