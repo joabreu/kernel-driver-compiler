@@ -7,7 +7,7 @@ O = $(CURDIR)/build
 
 export GCC=gcc
 export BISON=bison
-export FLEX=flex
+export LEX=flex
 export HELPER
 export CCFLAGS
 export O
